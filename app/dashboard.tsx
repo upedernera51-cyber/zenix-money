@@ -1,11 +1,8 @@
 'use client';
 
 import { Wallet, Plus, Trash2, Zap, TrendingUp, TrendingDown, X, Pencil, Download, BarChart2, Tag, ChevronLeft, ChevronRight } from "lucide-react";
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { supabase } from '@/lib/supabase';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell
-} from 'recharts';
+import { useState, useEffect, useMemo } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 // ─── TIPOS ───────────────────────────────────────────────────────────────────
 
@@ -38,6 +35,8 @@ const FORM_INICIAL: FormState = {
   category: '',
 };
 
+const STORAGE_KEY = 'zenix_movimientos';
+
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
 const formatARS = (n: number) =>
@@ -53,66 +52,58 @@ const MESES = [
   'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
 ];
 
-const mesKey = (fecha: string) => fecha.slice(0, 7); // 'YYYY-MM'
+const mesKey = (fecha: string) => fecha.slice(0, 7);
+
+const cargarDesdeStorage = (): Movimiento[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const guardarEnStorage = (movimientos: Movimiento[]) => {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(movimientos));
+};
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 
 export default function ZenixDashboard() {
 
-  // ── Estado ──────────────────────────────────────────────────────────────────
-  const [isModalOpen, setIsModalOpen]     = useState(false);
-  const [editando, setEditando]           = useState<Movimiento | null>(null);
-  const [formData, setFormData]           = useState<FormState>(FORM_INICIAL);
-  const [movimientos, setMovimientos]     = useState<Movimiento[]>([]);
-  const [loading, setLoading]             = useState(true);
-  const [saving, setSaving]               = useState(false);
-  const [deletingId, setDeletingId]       = useState<string | null>(null);
-  const [filtro, setFiltro]               = useState<'todos' | TipoMovimiento>('todos');
-  const [vista, setVista]                 = useState<Vista>('movimientos');
+  const [isModalOpen, setIsModalOpen]   = useState(false);
+  const [editando, setEditando]         = useState<Movimiento | null>(null);
+  const [formData, setFormData]         = useState<FormState>(FORM_INICIAL);
+  const [movimientos, setMovimientos]   = useState<Movimiento[]>([]);
+  const [filtro, setFiltro]             = useState<'todos' | TipoMovimiento>('todos');
+  const [vista, setVista]               = useState<Vista>('movimientos');
 
-  // Mes actual como estado (navega con flechas)
   const hoy = new Date();
   const [mesSel, setMesSel] = useState<string>(
     `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
   );
 
-  // ── Fetch ────────────────────────────────────────────────────────────────────
-  const fetchMovimientos = useCallback(async () => {
-    setLoading(true);
-    const { data, error } = await supabase
-      .from('movimientos')
-      .select('*')
-      .order('fecha', { ascending: false });
-
-    if (error) {
-      console.error('Error al traer datos:', error.message);
-    } else {
-      setMovimientos((data as Movimiento[]) || []);
-    }
-    setLoading(false);
+  // ── Cargar desde localStorage al iniciar ──────────────────────────────────
+  useEffect(() => {
+    setMovimientos(cargarDesdeStorage());
   }, []);
 
-  useEffect(() => {
-    fetchMovimientos();
-  }, [fetchMovimientos]);
-
-  // ── Movimientos del mes seleccionado ─────────────────────────────────────────
+  // ── Movimientos del mes ───────────────────────────────────────────────────
   const movimientosMes = useMemo(
     () => movimientos.filter(m => mesKey(m.fecha) === mesSel),
     [movimientos, mesSel]
   );
 
-  // ── Métricas del mes ──────────────────────────────────────────────────────────
+  // ── Métricas ──────────────────────────────────────────────────────────────
   const totalIngresos = movimientosMes.filter(m => m.type === 'ingreso').reduce((acc, m) => acc + Number(m.amount), 0);
   const totalGastos   = movimientosMes.filter(m => m.type === 'gasto').reduce((acc, m) => acc + Number(m.amount), 0);
   const balance       = totalIngresos - totalGastos;
 
-  // ── Filtro tipo dentro del mes ────────────────────────────────────────────────
   const movimientosFiltrados = filtro === 'todos'
     ? movimientosMes
     : movimientosMes.filter(m => m.type === filtro);
 
-  // ── Categorías del mes ────────────────────────────────────────────────────────
+  // ── Categorías ────────────────────────────────────────────────────────────
   const categoriasTotales = useMemo(() => {
     const map: Record<string, { ingreso: number; gasto: number }> = {};
     movimientosMes.forEach(m => {
@@ -125,7 +116,7 @@ export default function ZenixDashboard() {
       .sort((a, b) => Math.abs(b.gasto) - Math.abs(a.gasto));
   }, [movimientosMes]);
 
-  // ── Datos gráfico (últimos 6 meses) ──────────────────────────────────────────
+  // ── Gráfico ───────────────────────────────────────────────────────────────
   const datosGrafico = useMemo(() => {
     const meses: string[] = [];
     const base = new Date(mesSel + '-01');
@@ -137,18 +128,18 @@ export default function ZenixDashboard() {
       const mvs = movimientos.filter(m => mesKey(m.fecha) === key);
       const ing = mvs.filter(m => m.type === 'ingreso').reduce((a, m) => a + Number(m.amount), 0);
       const gas = mvs.filter(m => m.type === 'gasto').reduce((a, m) => a + Number(m.amount), 0);
-      const [yr, mo] = key.split('-');
+      const [, mo] = key.split('-');
       return { mes: MESES[parseInt(mo) - 1].slice(0, 3), ingreso: ing, gasto: gas, key, activo: key === mesSel };
     });
   }, [movimientos, mesSel]);
 
-  // ── Categorías para datalist ──────────────────────────────────────────────────
+  // ── Categorías para datalist ──────────────────────────────────────────────
   const categorias = useMemo(
     () => Array.from(new Set(movimientos.map(m => m.categoria).filter(Boolean))) as string[],
     [movimientos]
   );
 
-  // ── Navegación de mes ─────────────────────────────────────────────────────────
+  // ── Navegación de mes ─────────────────────────────────────────────────────
   const cambiarMes = (delta: number) => {
     const [yr, mo] = mesSel.split('-').map(Number);
     const d = new Date(yr, mo - 1 + delta, 1);
@@ -160,14 +151,14 @@ export default function ZenixDashboard() {
     return `${MESES[mo - 1]} ${yr}`;
   })();
 
-  // ── Abrir modal nuevo ─────────────────────────────────────────────────────────
+  // ── Abrir modal nuevo ─────────────────────────────────────────────────────
   const abrirNuevo = () => {
     setEditando(null);
     setFormData(FORM_INICIAL);
     setIsModalOpen(true);
   };
 
-  // ── Abrir modal edición ───────────────────────────────────────────────────────
+  // ── Abrir modal edición ───────────────────────────────────────────────────
   const abrirEdicion = (m: Movimiento) => {
     setEditando(m);
     setFormData({
@@ -180,62 +171,51 @@ export default function ZenixDashboard() {
     setIsModalOpen(true);
   };
 
-  // ── Guardar (create o update) ─────────────────────────────────────────────────
-  const handleSave = async (e: React.FormEvent) => {
+  // ── Guardar ───────────────────────────────────────────────────────────────
+  const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.label.trim() || !formData.amount) return;
 
-    setSaving(true);
-    const payload = {
-      label:     formData.label.trim(),
-      amount:    parseFloat(formData.amount),
-      type:      formData.type,
-      categoria: formData.category.trim() || null,
-      detail:    formData.detail.trim() || null,
-    };
+    let nuevos: Movimiento[];
 
-    let error;
     if (editando) {
-      ({ error } = await supabase.from('movimientos').update(payload).eq('id', editando.id));
+      nuevos = movimientos.map(m =>
+        m.id === editando.id
+          ? { ...m, label: formData.label.trim(), amount: parseFloat(formData.amount), type: formData.type, categoria: formData.category.trim() || null, detail: formData.detail.trim() || null }
+          : m
+      );
     } else {
-      ({ error } = await supabase.from('movimientos').insert([payload]));
+      const nuevo: Movimiento = {
+        id:        crypto.randomUUID(),
+        fecha:     new Date().toISOString(),
+        label:     formData.label.trim(),
+        amount:    parseFloat(formData.amount),
+        type:      formData.type,
+        categoria: formData.category.trim() || null,
+        detail:    formData.detail.trim() || null,
+      };
+      nuevos = [nuevo, ...movimientos];
     }
 
-    if (!error) {
-      setIsModalOpen(false);
-      setEditando(null);
-      setFormData(FORM_INICIAL);
-      await fetchMovimientos();
-    } else {
-      alert('Error al guardar: ' + error.message);
-    }
-    setSaving(false);
+    guardarEnStorage(nuevos);
+    setMovimientos(nuevos);
+    setIsModalOpen(false);
+    setEditando(null);
+    setFormData(FORM_INICIAL);
   };
 
-  // ── Eliminar ─────────────────────────────────────────────────────────────────
-  const handleDelete = async (id: string) => {
-    setDeletingId(id);
-    const { error } = await supabase.from('movimientos').delete().eq('id', id);
-    if (!error) {
-      setMovimientos(prev => prev.filter(m => m.id !== id));
-    } else {
-      alert('Error al eliminar: ' + error.message);
-    }
-    setDeletingId(null);
+  // ── Eliminar ──────────────────────────────────────────────────────────────
+  const handleDelete = (id: string) => {
+    const nuevos = movimientos.filter(m => m.id !== id);
+    guardarEnStorage(nuevos);
+    setMovimientos(nuevos);
   };
 
-  // ── Exportar CSV ──────────────────────────────────────────────────────────────
+  // ── Exportar CSV ──────────────────────────────────────────────────────────
   const exportarCSV = () => {
     const filas = [
       ['Fecha', 'Concepto', 'Categoría', 'Tipo', 'Monto', 'Detalle'],
-      ...movimientosMes.map(m => [
-        m.fecha,
-        m.label,
-        m.categoria || '',
-        m.type,
-        m.amount,
-        m.detail || '',
-      ]),
+      ...movimientosMes.map(m => [m.fecha, m.label, m.categoria || '', m.type, m.amount, m.detail || '']),
     ];
     const csv = filas.map(r => r.map(c => `"${c}"`).join(',')).join('\n');
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
@@ -247,7 +227,7 @@ export default function ZenixDashboard() {
     URL.revokeObjectURL(url);
   };
 
-  // ─── RENDER ────────────────────────────────────────────────────────────────
+  // ─── RENDER ───────────────────────────────────────────────────────────────
 
   return (
     <main className="min-h-screen bg-[#080808] text-zinc-100 font-sans antialiased">
@@ -330,9 +310,7 @@ export default function ZenixDashboard() {
               type="button"
               onClick={() => setVista(tab.id)}
               className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
-                vista === tab.id
-                  ? 'bg-white text-black'
-                  : 'text-zinc-500 hover:text-zinc-300'
+                vista === tab.id ? 'bg-white text-black' : 'text-zinc-500 hover:text-zinc-300'
               }`}
             >
               {tab.icon}
@@ -351,9 +329,7 @@ export default function ZenixDashboard() {
                   key={f}
                   onClick={() => setFiltro(f)}
                   className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-wider transition-all ${
-                    filtro === f
-                      ? 'bg-white text-black'
-                      : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:border-zinc-600'
+                    filtro === f ? 'bg-white text-black' : 'bg-zinc-900 border border-zinc-800 text-zinc-400 hover:border-zinc-600'
                   }`}
                 >
                   {f === 'todos' ? 'Todos' : f === 'ingreso' ? 'Ingresos' : 'Gastos'}
@@ -363,9 +339,9 @@ export default function ZenixDashboard() {
                 <span className="text-xs text-zinc-600 tabular-nums">{movimientosFiltrados.length} reg.</span>
                 <button
                   type="button"
-                  onClick={exportarCSV}
                   aria-label="Exportar CSV"
                   title="Exportar CSV"
+                  onClick={exportarCSV}
                   className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-zinc-200 transition-all"
                 >
                   <Download size={14} />
@@ -374,13 +350,7 @@ export default function ZenixDashboard() {
             </div>
 
             <section className="space-y-3">
-              {loading ? (
-                <div className="space-y-3">
-                  {[1, 2, 3].map(i => (
-                    <div key={i} className="h-20 bg-zinc-900/50 rounded-2xl animate-pulse" />
-                  ))}
-                </div>
-              ) : movimientosFiltrados.length === 0 ? (
+              {movimientosFiltrados.length === 0 ? (
                 <div className="text-center py-16">
                   <p className="text-zinc-600 text-sm">
                     {filtro === 'todos' ? 'No hay movimientos en este mes.' : `No hay ${filtro}s en este mes.`}
@@ -388,49 +358,29 @@ export default function ZenixDashboard() {
                 </div>
               ) : (
                 movimientosFiltrados.map(m => (
-                  <div
-                    key={m.id}
-                    className="group flex items-center gap-4 bg-zinc-900/40 border border-zinc-800/50 p-4 rounded-2xl hover:border-zinc-700/70 transition-all"
-                  >
+                  <div key={m.id} className="group flex items-center gap-4 bg-zinc-900/40 border border-zinc-800/50 p-4 rounded-2xl hover:border-zinc-700/70 transition-all">
                     <div className={`w-1 self-stretch rounded-full flex-shrink-0 ${m.type === 'ingreso' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <p className="font-semibold text-zinc-100 truncate">{m.label}</p>
                           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                             {m.categoria && (
-                              <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">
-                                {m.categoria}
-                              </span>
+                              <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">{m.categoria}</span>
                             )}
                             <span className="text-[10px] text-zinc-600">{formatFecha(m.fecha)}</span>
                           </div>
-                          {m.detail && (
-                            <p className="text-xs text-zinc-600 mt-1 truncate">{m.detail}</p>
-                          )}
+                          {m.detail && <p className="text-xs text-zinc-600 mt-1 truncate">{m.detail}</p>}
                         </div>
-
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <span className={`text-base font-bold tabular-nums ${m.type === 'ingreso' ? 'text-emerald-400' : 'text-rose-400'}`}>
                             {m.type === 'ingreso' ? '+' : '−'}${formatARS(Number(m.amount))}
                           </span>
                           <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                            <button
-                              type="button"
-                              onClick={() => abrirEdicion(m)}
-                              className="text-zinc-600 hover:text-zinc-300 transition-colors p-1"
-                              aria-label="Editar movimiento"
-                            >
+                            <button type="button" onClick={() => abrirEdicion(m)} className="text-zinc-600 hover:text-zinc-300 transition-colors p-1" aria-label="Editar movimiento">
                               <Pencil size={14} />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDelete(m.id)}
-                              disabled={deletingId === m.id}
-                              className="text-zinc-600 hover:text-rose-400 transition-colors disabled:opacity-40 p-1"
-                              aria-label="Eliminar movimiento"
-                            >
+                            <button type="button" onClick={() => handleDelete(m.id)} className="text-zinc-600 hover:text-rose-400 transition-colors p-1" aria-label="Eliminar movimiento">
                               <Trash2 size={14} />
                             </button>
                           </div>
@@ -479,13 +429,9 @@ export default function ZenixDashboard() {
                       </div>
                     )}
                   </div>
-                  {/* Barra proporcional */}
                   {(ingreso + gasto) > 0 && (
                     <div className="mt-3 h-1 rounded-full bg-zinc-800 overflow-hidden">
-                      <div
-                        className="h-full bg-emerald-500 rounded-full"
-                        style={{ width: `${(ingreso / (ingreso + gasto)) * 100}%` }}
-                      />
+                      <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${(ingreso / (ingreso + gasto)) * 100}%` }} />
                     </div>
                   )}
                 </div>
@@ -501,12 +447,7 @@ export default function ZenixDashboard() {
             <div className="bg-zinc-900/40 border border-zinc-800/50 rounded-3xl p-5">
               <ResponsiveContainer width="100%" height={220}>
                 <BarChart data={datosGrafico} barCategoryGap="30%" barGap={4}>
-                  <XAxis
-                    dataKey="mes"
-                    tick={{ fill: '#52525b', fontSize: 11 }}
-                    axisLine={false}
-                    tickLine={false}
-                  />
+                  <XAxis dataKey="mes" tick={{ fill: '#52525b', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis hide />
                   <Tooltip
                     contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 12, fontSize: 12 }}
@@ -515,18 +456,13 @@ export default function ZenixDashboard() {
                     cursor={{ fill: 'rgba(255,255,255,0.03)' }}
                   />
                   <Bar dataKey="ingreso" radius={[4, 4, 0, 0]}>
-                    {datosGrafico.map((entry, i) => (
-                      <Cell key={i} fill={entry.activo ? '#10b981' : '#166534'} />
-                    ))}
+                    {datosGrafico.map((entry, i) => <Cell key={i} fill={entry.activo ? '#10b981' : '#166534'} />)}
                   </Bar>
                   <Bar dataKey="gasto" radius={[4, 4, 0, 0]}>
-                    {datosGrafico.map((entry, i) => (
-                      <Cell key={i} fill={entry.activo ? '#f43f5e' : '#881337'} />
-                    ))}
+                    {datosGrafico.map((entry, i) => <Cell key={i} fill={entry.activo ? '#f43f5e' : '#881337'} />)}
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-              {/* Leyenda */}
               <div className="flex justify-center gap-6 mt-2">
                 <div className="flex items-center gap-1.5">
                   <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500" />
@@ -538,17 +474,13 @@ export default function ZenixDashboard() {
                 </div>
               </div>
             </div>
-
-            {/* Tabla resumen de los 6 meses */}
             <div className="space-y-2">
               {datosGrafico.map(({ mes, key, ingreso, gasto, activo }) => (
                 <div
                   key={key}
                   onClick={() => { setMesSel(key); setVista('movimientos'); }}
                   className={`flex items-center justify-between px-4 py-3 rounded-2xl border cursor-pointer transition-all ${
-                    activo
-                      ? 'bg-zinc-800/60 border-zinc-700'
-                      : 'bg-zinc-900/30 border-zinc-800/40 hover:border-zinc-700'
+                    activo ? 'bg-zinc-800/60 border-zinc-700' : 'bg-zinc-900/30 border-zinc-800/40 hover:border-zinc-700'
                   }`}
                 >
                   <span className={`text-sm font-medium ${activo ? 'text-white' : 'text-zinc-400'}`}>{mes} {key.split('-')[0]}</span>
@@ -577,28 +509,21 @@ export default function ZenixDashboard() {
         <Plus color="black" size={28} strokeWidth={3} />
       </button>
 
-      {/* ── MODAL (nuevo / editar) ────────────────────────────────────────────── */}
+      {/* ── MODAL ────────────────────────────────────────────────────────────── */}
       {isModalOpen && (
         <div
           className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-end sm:items-center justify-center p-4"
           onClick={(e) => { if (e.target === e.currentTarget) { setIsModalOpen(false); setEditando(null); } }}
         >
           <div className="bg-zinc-950 border border-zinc-800 w-full max-w-md rounded-3xl p-7 shadow-2xl">
-
             <div className="flex justify-between items-center mb-7">
               <h2 className="text-lg font-bold">{editando ? 'Editar Movimiento' : 'Nuevo Movimiento'}</h2>
-              <button
-                type="button"
-                onClick={() => { setIsModalOpen(false); setEditando(null); }}
-                aria-label="Cerrar modal"
-                className="text-zinc-600 hover:text-zinc-300 transition-colors p-1"
-              >
+              <button type="button" onClick={() => { setIsModalOpen(false); setEditando(null); }} aria-label="Cerrar modal" className="text-zinc-600 hover:text-zinc-300 transition-colors p-1">
                 <X size={20} />
               </button>
             </div>
 
             <form onSubmit={handleSave} className="space-y-5">
-
               <div className="grid grid-cols-2 gap-2">
                 {(['gasto', 'ingreso'] as const).map(tipo => (
                   <button
@@ -607,9 +532,7 @@ export default function ZenixDashboard() {
                     onClick={() => setFormData(f => ({ ...f, type: tipo }))}
                     className={`py-3 rounded-2xl text-sm font-bold uppercase tracking-wider transition-all ${
                       formData.type === tipo
-                        ? tipo === 'ingreso'
-                          ? 'bg-emerald-500 text-black'
-                          : 'bg-rose-500 text-white'
+                        ? tipo === 'ingreso' ? 'bg-emerald-500 text-black' : 'bg-rose-500 text-white'
                         : 'bg-zinc-900 border border-zinc-800 text-zinc-500'
                     }`}
                   >
@@ -675,21 +598,17 @@ export default function ZenixDashboard() {
 
               <button
                 type="submit"
-                disabled={saving}
                 className={`w-full font-black py-4 rounded-2xl transition-all active:scale-95 text-sm tracking-wide ${
                   formData.type === 'ingreso'
-                    ? 'bg-emerald-500 text-black hover:bg-emerald-400 disabled:opacity-60'
-                    : 'bg-white text-black hover:bg-zinc-200 disabled:opacity-60'
+                    ? 'bg-emerald-500 text-black hover:bg-emerald-400'
+                    : 'bg-white text-black hover:bg-zinc-200'
                 }`}
               >
-                {saving
-                  ? 'GUARDANDO…'
-                  : editando
-                    ? `ACTUALIZAR ${formData.type === 'ingreso' ? 'INGRESO' : 'GASTO'}`
-                    : `GUARDAR ${formData.type === 'ingreso' ? 'INGRESO' : 'GASTO'}`
+                {editando
+                  ? `ACTUALIZAR ${formData.type === 'ingreso' ? 'INGRESO' : 'GASTO'}`
+                  : `GUARDAR ${formData.type === 'ingreso' ? 'INGRESO' : 'GASTO'}`
                 }
               </button>
-
             </form>
           </div>
         </div>
