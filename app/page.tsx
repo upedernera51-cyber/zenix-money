@@ -273,11 +273,11 @@ export default function ZenixDashboard() {
 
         {/* ── SELECTOR DE MES ──────────────────────────────────────────────── */}
         <div className="flex items-center justify-between">
-          <button type="button" onClick={() => cambiarMes(-1)} className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-colors">
+          <button type="button" aria-label="Mes anterior" onClick={() => cambiarMes(-1)} className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-colors">
             <ChevronLeft size={16} className="text-zinc-400" />
           </button>
           <span className="text-sm font-semibold text-zinc-300 tracking-wide">{mesLabel}</span>
-          <button type="button" onClick={() => cambiarMes(1)} className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-colors">
+          <button type="button" aria-label="Mes siguiente" onClick={() => cambiarMes(1)} className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-colors">
             <ChevronRight size={16} className="text-zinc-400" />
           </button>
         </div>
@@ -364,6 +364,7 @@ export default function ZenixDashboard() {
                 <button
                   type="button"
                   onClick={exportarCSV}
+                  aria-label="Exportar CSV"
                   title="Exportar CSV"
                   className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-zinc-200 transition-all"
                 >
