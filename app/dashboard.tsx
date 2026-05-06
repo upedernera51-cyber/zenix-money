@@ -284,50 +284,36 @@ export default function ZenixDashboard() {
           </button>
         </div>
 
-        {/* BALANCE CON DONUT */}
+        {/* BALANCE */}
         <section className="bg-zinc-900/50 border border-zinc-800/60 rounded-3xl p-7">
-          <div className="flex items-center gap-6">
-            <div className="relative flex-shrink-0 w-[120px] h-[120px]">
-              <svg width="120" height="120" viewBox="0 0 120 120">
-                {/* Track */}
-                <circle cx="60" cy="60" r={donutSVG.r} fill="none" stroke="#27272a" strokeWidth="12" />
-                {/* Ingresos */}
-                {donutSVG.ingPct > 0 && (
-                  <circle cx="60" cy="60" r={donutSVG.r} fill="none" stroke="#10b981" strokeWidth="12"
-                    strokeDasharray={`${donutSVG.ingPct * donutSVG.circ} ${donutSVG.circ}`}
-                    transform="rotate(-90 60 60)" strokeLinecap="butt" />
-                )}
-                {/* Gastos */}
-                {donutSVG.gasPct > 0 && (
-                  <circle cx="60" cy="60" r={donutSVG.r} fill="none" stroke="#f43f5e" strokeWidth="12"
-                    strokeDasharray={`${donutSVG.gasPct * donutSVG.circ} ${donutSVG.circ}`}
-                    strokeDashoffset={-(donutSVG.ingPct * donutSVG.circ)}
-                    transform="rotate(-90 60 60)" strokeLinecap="butt" />
-                )}
-              </svg>
-              <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className={`text-base font-black tabular-nums leading-none ${balance >= 0 ? 'text-white' : 'text-rose-400'}`}>
-                  {balance >= 0 ? '' : '−'}${fmt(Math.abs(balance))}
-                </span>
-                <span className="text-[9px] text-zinc-600 uppercase tracking-wider mt-0.5">balance</span>
+          <p className="text-xs text-zinc-500 uppercase tracking-widest mb-2 font-medium">Balance Neto</p>
+          <p className={`text-5xl font-black tracking-tighter tabular-nums ${balance >= 0 ? 'text-white' : 'text-rose-400'}`}>
+            {balance >= 0 ? '' : '−'} ${fmt(Math.abs(balance))}
+          </p>
+
+          {(totalIngresos + totalGastos) > 0 && (
+            <div className="mt-6">
+              <div className="h-1.5 rounded-full bg-zinc-800 overflow-hidden">
+                <div className="h-full bg-emerald-500 rounded-full transition-all duration-700"
+                  style={{ width: `${(totalIngresos / (totalIngresos + totalGastos)) * 100}%` }} />
               </div>
             </div>
-            <div className="flex-1 space-y-3">
-              <div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Ingresos</p>
-                <div className="flex items-center gap-2">
-                  <TrendingUp size={13} className="text-emerald-400" />
-                  <span className="text-lg font-bold text-emerald-400 tabular-nums">${fmt(totalIngresos)}</span>
-                </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-4 mt-5">
+            <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-2xl p-4">
+              <div className="flex items-center gap-1.5 mb-2">
+                <TrendingUp size={14} className="text-emerald-400" />
+                <span className="text-[10px] text-emerald-500 uppercase tracking-widest font-medium">Ingresos</span>
               </div>
-              <div className="h-px bg-zinc-800" />
-              <div>
-                <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Gastos</p>
-                <div className="flex items-center gap-2">
-                  <TrendingDown size={13} className="text-rose-400" />
-                  <span className="text-lg font-bold text-rose-400 tabular-nums">${fmt(totalGastos)}</span>
-                </div>
+              <p className="text-xl font-bold text-emerald-400 tabular-nums">${fmt(totalIngresos)}</p>
+            </div>
+            <div className="bg-rose-500/5 border border-rose-500/15 rounded-2xl p-4">
+              <div className="flex items-center gap-1.5 mb-2">
+                <TrendingDown size={14} className="text-rose-400" />
+                <span className="text-[10px] text-rose-500 uppercase tracking-widest font-medium">Gastos</span>
               </div>
+              <p className="text-xl font-bold text-rose-400 tabular-nums">${fmt(totalGastos)}</p>
             </div>
           </div>
         </section>
@@ -512,6 +498,54 @@ export default function ZenixDashboard() {
                 </div>
               )}
             </div>
+
+            {/* Donut ingresos vs gastos */}
+            {(() => {
+              const total = periodoAnalisis === 'mensual' ? totalIngresos + totalGastos : analyticsAnual.ingAnio + analyticsAnual.gasAnio;
+              const ing   = periodoAnalisis === 'mensual' ? totalIngresos : analyticsAnual.ingAnio;
+              const gas   = periodoAnalisis === 'mensual' ? totalGastos   : analyticsAnual.gasAnio;
+              const r = 54; const circ = 2 * Math.PI * r;
+              const ingPct = total > 0 ? ing / total : 0;
+              const gasPct = total > 0 ? gas / total : 0;
+              return (
+                <div className="bg-zinc-900/40 border border-zinc-800/50 rounded-3xl p-5 flex items-center gap-6">
+                  <div className="relative flex-shrink-0 w-[140px] h-[140px]">
+                    <svg width="140" height="140" viewBox="0 0 140 140">
+                      <circle cx="70" cy="70" r={r} fill="none" stroke="#27272a" strokeWidth="14" />
+                      {ingPct > 0 && <circle cx="70" cy="70" r={r} fill="none" stroke="#10b981" strokeWidth="14"
+                        strokeDasharray={`${ingPct * circ} ${circ}`} transform="rotate(-90 70 70)" strokeLinecap="butt" />}
+                      {gasPct > 0 && <circle cx="70" cy="70" r={r} fill="none" stroke="#f43f5e" strokeWidth="14"
+                        strokeDasharray={`${gasPct * circ} ${circ}`} strokeDashoffset={-(ingPct * circ)}
+                        transform="rotate(-90 70 70)" strokeLinecap="butt" />}
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-[10px] text-zinc-500 uppercase tracking-wider">split</span>
+                      <span className="text-base font-black text-white">{total > 0 ? `${Math.round(ingPct * 100)}%` : '—'}</span>
+                      <span className="text-[9px] text-emerald-500">ingresos</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 space-y-3">
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">Ingresos</span>
+                      </div>
+                      <p className="text-lg font-bold text-emerald-400 tabular-nums">${fmt(ing)}</p>
+                      <p className="text-xs text-zinc-600">{total > 0 ? `${Math.round(ingPct * 100)}%` : '—'} del total</p>
+                    </div>
+                    <div className="h-px bg-zinc-800" />
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-1">
+                        <div className="w-2 h-2 rounded-full bg-rose-500" />
+                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">Gastos</span>
+                      </div>
+                      <p className="text-lg font-bold text-rose-400 tabular-nums">${fmt(gas)}</p>
+                      <p className="text-xs text-zinc-600">{total > 0 ? `${Math.round(gasPct * 100)}%` : '—'} del total</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ── MÉTRICAS MENSUAL ── */}
             {periodoAnalisis === 'mensual' && (
