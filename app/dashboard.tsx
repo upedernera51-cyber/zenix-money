@@ -8,7 +8,7 @@ import {
 import { useState, useEffect, useMemo } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  Cell, PieChart, Pie, LineChart, Line, CartesianGrid,
+  Cell, LineChart, Line, CartesianGrid,
 } from 'recharts';
 
 // ─── TIPOS ───────────────────────────────────────────────────────────────────
@@ -182,10 +182,15 @@ export default function ZenixDashboard() {
     return { ingAnio, gasAnio, tasaAhorro, gastoProm, topCat, deltaIng, deltaGas };
   }, [movimientos, anioSel, datosBarrasAnual]);
 
-  // ── Donut ────────────────────────────────────────────────────────────────────
-  const donutData = useMemo(() => {
-    if (totalIngresos + totalGastos === 0) return [{ value: 1, color: '#27272a' }];
-    return [{ value: totalIngresos, color: '#10b981' }, { value: totalGastos, color: '#f43f5e' }];
+  // ── Donut (SVG puro, sin recharts) ───────────────────────────────────────────
+  const donutSVG = useMemo(() => {
+    const r    = 44;
+    const circ = 2 * Math.PI * r;
+    const total = totalIngresos + totalGastos;
+    if (total === 0) return { ingPct: 0, gasPct: 0, circ, r };
+    const ingPct = totalIngresos / total;
+    const gasPct = totalGastos   / total;
+    return { ingPct, gasPct, circ, r };
   }, [totalIngresos, totalGastos]);
 
   // ── Navegación mes / año ──────────────────────────────────────────────────────
@@ -282,12 +287,24 @@ export default function ZenixDashboard() {
         {/* BALANCE CON DONUT */}
         <section className="bg-zinc-900/50 border border-zinc-800/60 rounded-3xl p-7">
           <div className="flex items-center gap-6">
-            <div className="relative flex-shrink-0">
-              <PieChart width={120} height={120}>
-                <Pie data={donutData} cx={55} cy={55} innerRadius={38} outerRadius={52} dataKey="value" startAngle={90} endAngle={-270} stroke="none">
-                  {donutData.map((d, i) => <Cell key={i} fill={d.color} />)}
-                </Pie>
-              </PieChart>
+            <div className="relative flex-shrink-0 w-[120px] h-[120px]">
+              <svg width="120" height="120" viewBox="0 0 120 120">
+                {/* Track */}
+                <circle cx="60" cy="60" r={donutSVG.r} fill="none" stroke="#27272a" strokeWidth="12" />
+                {/* Ingresos */}
+                {donutSVG.ingPct > 0 && (
+                  <circle cx="60" cy="60" r={donutSVG.r} fill="none" stroke="#10b981" strokeWidth="12"
+                    strokeDasharray={`${donutSVG.ingPct * donutSVG.circ} ${donutSVG.circ}`}
+                    transform="rotate(-90 60 60)" strokeLinecap="butt" />
+                )}
+                {/* Gastos */}
+                {donutSVG.gasPct > 0 && (
+                  <circle cx="60" cy="60" r={donutSVG.r} fill="none" stroke="#f43f5e" strokeWidth="12"
+                    strokeDasharray={`${donutSVG.gasPct * donutSVG.circ} ${donutSVG.circ}`}
+                    strokeDashoffset={-(donutSVG.ingPct * donutSVG.circ)}
+                    transform="rotate(-90 60 60)" strokeLinecap="butt" />
+                )}
+              </svg>
               <div className="absolute inset-0 flex flex-col items-center justify-center">
                 <span className={`text-base font-black tabular-nums leading-none ${balance >= 0 ? 'text-white' : 'text-rose-400'}`}>
                   {balance >= 0 ? '' : '−'}${fmt(Math.abs(balance))}
