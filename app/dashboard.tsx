@@ -3,13 +3,14 @@
 import {
   Wallet, Plus, Trash2, Zap, TrendingUp, TrendingDown, X,
   Pencil, Download, BarChart2, Tag, ChevronLeft, ChevronRight,
-  Settings, Check,
+  Settings, Check, User,
 } from "lucide-react";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   Cell, LineChart, Line, CartesianGrid,
 } from 'recharts';
+import { supabase } from '@/lib/supabase';
 
 // ─── TIPOS ───────────────────────────────────────────────────────────────────
 
@@ -36,8 +37,7 @@ interface FormState {
 }
 
 const FORM_INICIAL: FormState = { label: '', amount: '', type: 'gasto', detail: '', category: '' };
-const STORAGE_KEY = 'zenix_movimientos';
-const CATS_KEY    = 'zenix_categorias';
+const USER_KEY    = 'zenix_user';
 
 // ─── HELPERS ─────────────────────────────────────────────────────────────────
 
@@ -51,10 +51,7 @@ const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'
 const mesKey = (f: string) => f.slice(0, 7);
 const anioKey = (f: string) => f.slice(0, 4);
 
-const loadJSON = <T,>(key: string, fallback: T): T => {
-  try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : fallback; } catch { return fallback; }
-};
-const saveJSON = (key: string, val: unknown) => localStorage.setItem(key, JSON.stringify(val));
+// (Helpers de localStorage solo se usan para el nombre de usuario)
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 
@@ -63,6 +60,10 @@ export default function ZenixDashboard() {
   const hoy = new Date();
 
   // ── Estado ───────────────────────────────────────────────────────────────────
+  const [userName, setUserName]               = useState<string | null>(null);
+  const [showUserSetup, setShowUserSetup]     = useState(false);
+  const [tempUserName, setTempUserName]       = useState('');
+  const [loading, setLoading]                 = useState(true);
   const [movimientos, setMovimientos]         = useState<Movimiento[]>([]);
   const [categorias, setCategorias]           = useState<string[]>([]);
   const [isModalOpen, setIsModalOpen]         = useState(false);
@@ -79,10 +80,42 @@ export default function ZenixDashboard() {
     `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}`
   );
 
+  // ── Cargar nombre de usuario ─────────────────────────────────────────────────
   useEffect(() => {
-    setMovimientos(loadJSON(STORAGE_KEY, []));
-    setCategorias(loadJSON(CATS_KEY, []));
+    const u = localStorage.getItem(USER_KEY);
+    if (u) setUserName(u);
+    else setShowUserSetup(true);
   }, []);
+
+  // ── Fetch de datos desde Supabase ────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    if (!userName) return;
+    setLoading(true);
+    const [mvRes, catRes] = await Promise.all([
+      supabase.from('movimientos').select('*').eq('user_id', userName).order('fecha', { ascending: false }),
+      supabase.from('categorias').select('nombre').eq('user_id', userName).order('nombre'),
+    ]);
+    if (mvRes.error)  console.error('Movimientos:', mvRes.error.message);
+    if (catRes.error) console.error('Categorías:',  catRes.error.message);
+    setMovimientos((mvRes.data as Movimiento[]) || []);
+    setCategorias((catRes.data || []).map((c: { nombre: string }) => c.nombre));
+    setLoading(false);
+  }, [userName]);
+
+  useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Setup de usuario ─────────────────────────────────────────────────────────
+  const guardarUsuario = () => {
+    const u = tempUserName.trim();
+    if (!u) return;
+    localStorage.setItem(USER_KEY, u);
+    setUserName(u);
+    setShowUserSetup(false);
+  };
+  const cambiarUsuario = () => {
+    setTempUserName(userName || '');
+    setShowUserSetup(true);
+  };
 
   // ── Datos del mes ─────────────────────────────────────────────────────────────
   const movimientosMes = useMemo(
@@ -208,36 +241,47 @@ export default function ZenixDashboard() {
     setFormData({ label: m.label, amount: String(m.amount), type: m.type, detail: m.detail || '', category: m.categoria || '' });
     setIsModalOpen(true);
   };
-  const handleSave = (e: React.FormEvent) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.label.trim() || !formData.amount) return;
-    let nuevos: Movimiento[];
+    if (!formData.label.trim() || !formData.amount || !userName) return;
+    const payload = {
+      label:     formData.label.trim(),
+      amount:    parseFloat(formData.amount),
+      type:      formData.type,
+      categoria: formData.category.trim() || null,
+      detail:    formData.detail.trim() || null,
+      user_id:   userName,
+    };
     if (editando) {
-      nuevos = movimientos.map(m => m.id === editando.id
-        ? { ...m, label: formData.label.trim(), amount: parseFloat(formData.amount), type: formData.type, categoria: formData.category.trim() || null, detail: formData.detail.trim() || null }
-        : m);
+      const { error } = await supabase.from('movimientos').update(payload).eq('id', editando.id);
+      if (error) { alert('Error al actualizar: ' + error.message); return; }
     } else {
-      nuevos = [{ id: crypto.randomUUID(), fecha: new Date().toISOString(), label: formData.label.trim(), amount: parseFloat(formData.amount), type: formData.type, categoria: formData.category.trim() || null, detail: formData.detail.trim() || null }, ...movimientos];
+      const { error } = await supabase.from('movimientos').insert([{ ...payload, fecha: new Date().toISOString() }]);
+      if (error) { alert('Error al guardar: ' + error.message); return; }
     }
-    saveJSON(STORAGE_KEY, nuevos);
-    setMovimientos(nuevos);
+    await fetchData();
     setIsModalOpen(false); setEditando(null); setFormData(FORM_INICIAL);
   };
-  const handleDelete = (id: string) => {
-    const nuevos = movimientos.filter(m => m.id !== id);
-    saveJSON(STORAGE_KEY, nuevos); setMovimientos(nuevos);
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from('movimientos').delete().eq('id', id);
+    if (error) { alert('Error al eliminar: ' + error.message); return; }
+    setMovimientos(prev => prev.filter(m => m.id !== id));
   };
 
   // ── Gestión categorías ────────────────────────────────────────────────────────
-  const agregarCat = () => {
+  const agregarCat = async () => {
     const cat = nuevaCat.trim();
-    if (!cat || categorias.includes(cat)) return;
-    const nuevas = [...categorias, cat];
-    saveJSON(CATS_KEY, nuevas); setCategorias(nuevas); setNuevaCat('');
+    if (!cat || categorias.includes(cat) || !userName) return;
+    const { error } = await supabase.from('categorias').insert([{ nombre: cat, user_id: userName }]);
+    if (error) { alert('Error: ' + error.message); return; }
+    setCategorias([...categorias, cat]);
+    setNuevaCat('');
   };
-  const eliminarCat = (cat: string) => {
-    const nuevas = categorias.filter(c => c !== cat);
-    saveJSON(CATS_KEY, nuevas); setCategorias(nuevas);
+  const eliminarCat = async (cat: string) => {
+    if (!userName) return;
+    const { error } = await supabase.from('categorias').delete().eq('nombre', cat).eq('user_id', userName);
+    if (error) { alert('Error: ' + error.message); return; }
+    setCategorias(prev => prev.filter(c => c !== cat));
   };
 
   // ── CSV ───────────────────────────────────────────────────────────────────────
@@ -265,10 +309,11 @@ export default function ZenixDashboard() {
             <p className="text-[9px] text-zinc-600 tracking-[0.25em] uppercase">Money Manager</p>
           </div>
         </div>
-        <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-xl">
-          <Wallet size={14} className="text-zinc-500" />
-          <span className="text-xs font-medium text-zinc-300">Principal</span>
-        </div>
+        <button type="button" onClick={cambiarUsuario}
+          className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 px-4 py-2 rounded-xl hover:border-zinc-600 transition-colors">
+          <User size={14} className="text-zinc-500" />
+          <span className="text-xs font-medium text-zinc-300">{userName || '...'}</span>
+        </button>
       </header>
 
       <div className="px-4 md:px-6 py-8 max-w-2xl mx-auto space-y-6 pb-28">
@@ -863,6 +908,44 @@ export default function ZenixDashboard() {
               </button>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* MODAL SETUP DE USUARIO */}
+      {showUserSetup && (
+        <div className="fixed inset-0 bg-black/90 backdrop-blur-md z-[200] flex items-center justify-center p-4">
+          <div className="bg-zinc-950 border border-zinc-800 w-full max-w-sm rounded-3xl p-7 shadow-2xl">
+            <div className="flex items-center gap-2 mb-2">
+              <User size={16} className="text-emerald-400" />
+              <h2 className="text-lg font-bold">Tu nombre de usuario</h2>
+            </div>
+            <p className="text-xs text-zinc-500 mb-5">Tus datos se sincronizan en la nube usando este nombre. Usá el mismo nombre en otros dispositivos para verlos.</p>
+            <input
+              autoFocus
+              className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-700"
+              placeholder="Ej: ulises"
+              value={tempUserName}
+              onChange={e => setTempUserName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && guardarUsuario()}
+            />
+            <button type="button" onClick={guardarUsuario}
+              className="w-full mt-4 bg-emerald-500 text-black font-black py-3.5 rounded-2xl hover:bg-emerald-400 transition-all active:scale-95 text-sm tracking-wide">
+              CONTINUAR
+            </button>
+            {userName && (
+              <button type="button" onClick={() => setShowUserSetup(false)}
+                className="w-full mt-2 text-xs text-zinc-600 hover:text-zinc-400 py-2 transition-colors">
+                Cancelar
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* LOADING OVERLAY */}
+      {loading && userName && (
+        <div className="fixed top-20 right-6 bg-zinc-900 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-400 z-50">
+          Cargando...
         </div>
       )}
     </main>
