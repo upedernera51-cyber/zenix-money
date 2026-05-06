@@ -499,50 +499,64 @@ export default function ZenixDashboard() {
               )}
             </div>
 
-            {/* Donut ingresos vs gastos */}
+            {/* Donut gastos por categoría */}
             {(() => {
-              const total = periodoAnalisis === 'mensual' ? totalIngresos + totalGastos : analyticsAnual.ingAnio + analyticsAnual.gasAnio;
-              const ing   = periodoAnalisis === 'mensual' ? totalIngresos : analyticsAnual.ingAnio;
-              const gas   = periodoAnalisis === 'mensual' ? totalGastos   : analyticsAnual.gasAnio;
+              const CAT_COLORS = ['#f43f5e','#f97316','#eab308','#10b981','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
+              const mvsFiltrados = periodoAnalisis === 'mensual'
+                ? movimientosMes.filter(m => m.type === 'gasto')
+                : movimientos.filter(m => anioKey(m.fecha) === String(anioSel) && m.type === 'gasto');
+              const totalGas = mvsFiltrados.reduce((a, m) => a + Number(m.amount), 0);
+              const mapCat: Record<string, number> = {};
+              mvsFiltrados.forEach(m => {
+                const cat = m.categoria || '(Sin categoría)';
+                mapCat[cat] = (mapCat[cat] || 0) + Number(m.amount);
+              });
+              const segmentos = Object.entries(mapCat)
+                .sort((a, b) => b[1] - a[1])
+                .map(([cat, amt], i) => ({ cat, amt, pct: totalGas > 0 ? amt / totalGas : 0, color: CAT_COLORS[i % CAT_COLORS.length] }));
+
               const r = 54; const circ = 2 * Math.PI * r;
-              const ingPct = total > 0 ? ing / total : 0;
-              const gasPct = total > 0 ? gas / total : 0;
+              let offset = 0;
+
               return (
-                <div className="bg-zinc-900/40 border border-zinc-800/50 rounded-3xl p-5 flex items-center gap-6">
-                  <div className="relative flex-shrink-0 w-[140px] h-[140px]">
-                    <svg width="140" height="140" viewBox="0 0 140 140">
-                      <circle cx="70" cy="70" r={r} fill="none" stroke="#27272a" strokeWidth="14" />
-                      {ingPct > 0 && <circle cx="70" cy="70" r={r} fill="none" stroke="#10b981" strokeWidth="14"
-                        strokeDasharray={`${ingPct * circ} ${circ}`} transform="rotate(-90 70 70)" strokeLinecap="butt" />}
-                      {gasPct > 0 && <circle cx="70" cy="70" r={r} fill="none" stroke="#f43f5e" strokeWidth="14"
-                        strokeDasharray={`${gasPct * circ} ${circ}`} strokeDashoffset={-(ingPct * circ)}
-                        transform="rotate(-90 70 70)" strokeLinecap="butt" />}
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-[10px] text-zinc-500 uppercase tracking-wider">split</span>
-                      <span className="text-base font-black text-white">{total > 0 ? `${Math.round(ingPct * 100)}%` : '—'}</span>
-                      <span className="text-[9px] text-emerald-500">ingresos</span>
-                    </div>
-                  </div>
-                  <div className="flex-1 space-y-3">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">Ingresos</span>
+                <div className="bg-zinc-900/40 border border-zinc-800/50 rounded-3xl p-5">
+                  <p className="text-[10px] text-zinc-500 uppercase tracking-widest mb-4">Gastos por categoría</p>
+                  {segmentos.length === 0 ? (
+                    <p className="text-sm text-zinc-600 text-center py-4">Sin gastos registrados.</p>
+                  ) : (
+                    <div className="flex items-center gap-6">
+                      <div className="relative flex-shrink-0 w-[140px] h-[140px]">
+                        <svg width="140" height="140" viewBox="0 0 140 140">
+                          <circle cx="70" cy="70" r={r} fill="none" stroke="#27272a" strokeWidth="14" />
+                          {segmentos.map((seg, i) => {
+                            const dash = seg.pct * circ;
+                            const el = (
+                              <circle key={i} cx="70" cy="70" r={r} fill="none"
+                                stroke={seg.color} strokeWidth="14"
+                                strokeDasharray={`${dash} ${circ}`}
+                                strokeDashoffset={-offset}
+                                transform="rotate(-90 70 70)" strokeLinecap="butt" />
+                            );
+                            offset += dash;
+                            return el;
+                          })}
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="text-[10px] text-zinc-500 uppercase tracking-wider">total</span>
+                          <span className="text-sm font-black text-rose-400 tabular-nums">${fmt(totalGas)}</span>
+                        </div>
                       </div>
-                      <p className="text-lg font-bold text-emerald-400 tabular-nums">${fmt(ing)}</p>
-                      <p className="text-xs text-zinc-600">{total > 0 ? `${Math.round(ingPct * 100)}%` : '—'} del total</p>
-                    </div>
-                    <div className="h-px bg-zinc-800" />
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1">
-                        <div className="w-2 h-2 rounded-full bg-rose-500" />
-                        <span className="text-[10px] text-zinc-500 uppercase tracking-widest">Gastos</span>
+                      <div className="flex-1 space-y-2 min-w-0">
+                        {segmentos.map(seg => (
+                          <div key={seg.cat} className="flex items-center gap-2 min-w-0">
+                            <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: seg.color }} />
+                            <span className="text-[11px] text-zinc-400 truncate flex-1">{seg.cat}</span>
+                            <span className="text-[11px] text-zinc-500 tabular-nums flex-shrink-0">{Math.round(seg.pct * 100)}%</span>
+                          </div>
+                        ))}
                       </div>
-                      <p className="text-lg font-bold text-rose-400 tabular-nums">${fmt(gas)}</p>
-                      <p className="text-xs text-zinc-600">{total > 0 ? `${Math.round(gasPct * 100)}%` : '—'} del total</p>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })()}
