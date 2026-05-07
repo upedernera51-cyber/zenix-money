@@ -997,19 +997,19 @@ export default function ZenixDashboard() {
                   placeholder="Opcional · Ej: Nafta, Sueldo…" value={formData.label} onChange={e => setFormData(f => ({ ...f, label: e.target.value }))} />
               </div>
 
-              <div className="grid grid-cols-5 gap-3">
-                <div className="col-span-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
                   <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">Fecha</label>
                   <input type="date" max={todayISO()}
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-3 py-3.5 text-xs text-zinc-300 outline-none focus:border-zinc-600 transition-colors [color-scheme:dark]"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-3 py-3 text-sm text-zinc-300 outline-none focus:border-zinc-600 transition-colors [color-scheme:dark] min-w-0"
                     value={formDate} onChange={e => setFormDate(e.target.value)} />
                 </div>
-                <div className="col-span-3">
+                <div>
                   <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">
                     Monto <span className="text-rose-500">*</span>
                   </label>
                   <input required type="text" inputMode="numeric"
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white font-mono outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-700"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-3 py-3 text-sm text-white font-mono outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-700 min-w-0"
                     placeholder="0"
                     value={formData.amount ? Number(formData.amount).toLocaleString('es-AR') : ''}
                     onChange={e => {
