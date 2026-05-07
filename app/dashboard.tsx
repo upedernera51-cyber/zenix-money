@@ -51,7 +51,29 @@ const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'
 const mesKey = (f: string) => f.slice(0, 7);
 const anioKey = (f: string) => f.slice(0, 4);
 
-// (Helpers de localStorage solo se usan para el nombre de usuario)
+// Paleta de colores para categorías (usada en donut y badges)
+const CAT_COLORS = ['#f43f5e','#f97316','#eab308','#10b981','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
+
+// Hash estable: la misma categoría siempre tiene el mismo color en toda la app
+const catColor = (cat: string | null | undefined): string => {
+  if (!cat || cat === '(Sin categoría)') return '#52525b';
+  let h = 0;
+  for (let i = 0; i < cat.length; i++) h = (h * 31 + cat.charCodeAt(i)) | 0;
+  return CAT_COLORS[Math.abs(h) % CAT_COLORS.length];
+};
+
+// Formatear input de monto con separador de miles (es-AR)
+const formatAmount = (val: string) => {
+  const clean = val.replace(/\D/g, '');
+  if (!clean) return '';
+  return Number(clean).toLocaleString('es-AR');
+};
+
+// Fecha de hoy en formato YYYY-MM-DD para input type=date
+const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 // ─── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 
@@ -69,6 +91,7 @@ export default function ZenixDashboard() {
   const [isModalOpen, setIsModalOpen]         = useState(false);
   const [editando, setEditando]               = useState<Movimiento | null>(null);
   const [formData, setFormData]               = useState<FormState>(FORM_INICIAL);
+  const [formDate, setFormDate]                = useState<string>(todayISO());
   const [filtro, setFiltro]                   = useState<'todos' | TipoMovimiento>('todos');
   const [vista, setVista]                     = useState<Vista>('movimientos');
   const [showCatManager, setShowCatManager]   = useState(false);
@@ -235,32 +258,38 @@ export default function ZenixDashboard() {
   const mesLabel = (() => { const [yr, mo] = mesSel.split('-').map(Number); return `${MESES[mo - 1]} ${yr}`; })();
 
   // ── CRUD movimientos ──────────────────────────────────────────────────────────
-  const abrirNuevo    = () => { setEditando(null); setFormData(FORM_INICIAL); setIsModalOpen(true); };
+  const abrirNuevo    = () => {
+    setEditando(null); setFormData(FORM_INICIAL); setFormDate(todayISO()); setIsModalOpen(true);
+  };
   const abrirEdicion  = (m: Movimiento) => {
     setEditando(m);
     setFormData({ label: m.label, amount: String(m.amount), type: m.type, detail: m.detail || '', category: m.categoria || '' });
+    setFormDate(m.fecha.slice(0, 10));
     setIsModalOpen(true);
   };
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.label.trim() || !formData.amount || !userName) return;
+    if (!formData.amount || !userName) return;
+    const labelFinal = formData.label.trim() || formData.category.trim() || 'Sin concepto';
+    const fechaISO = formDate ? `${formDate}T12:00:00Z` : new Date().toISOString();
     const payload = {
-      label:     formData.label.trim(),
+      label:     labelFinal,
       amount:    parseFloat(formData.amount),
       type:      formData.type,
       categoria: formData.category.trim() || null,
       detail:    formData.detail.trim() || null,
+      fecha:     fechaISO,
       user_id:   userName,
     };
     if (editando) {
       const { error } = await supabase.from('movimientos').update(payload).eq('id', editando.id);
       if (error) { alert('Error al actualizar: ' + error.message); return; }
     } else {
-      const { error } = await supabase.from('movimientos').insert([{ ...payload, fecha: new Date().toISOString() }]);
+      const { error } = await supabase.from('movimientos').insert([payload]);
       if (error) { alert('Error al guardar: ' + error.message); return; }
     }
     await fetchData();
-    setIsModalOpen(false); setEditando(null); setFormData(FORM_INICIAL);
+    setIsModalOpen(false); setEditando(null); setFormData(FORM_INICIAL); setFormDate(todayISO());
   };
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from('movimientos').delete().eq('id', id);
@@ -409,7 +438,13 @@ export default function ZenixDashboard() {
                       <div className="min-w-0">
                         <p className="font-semibold text-zinc-100 truncate">{m.label}</p>
                         <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                          {m.categoria && <span className="text-[10px] bg-zinc-800 text-zinc-400 px-2 py-0.5 rounded-full">{m.categoria}</span>}
+                          {m.categoria && (
+                            <button type="button" onClick={() => setCatDetalle(m.categoria!)}
+                              className="cursor-pointer text-[10px] px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity font-medium"
+                              style={{ background: catColor(m.categoria) + '22', color: catColor(m.categoria) }}>
+                              {m.categoria}
+                            </button>
+                          )}
                           <span className="text-[10px] text-zinc-600">{formatFecha(m.fecha)}</span>
                         </div>
                         {m.detail && <p className="text-xs text-zinc-600 mt-1 truncate">{m.detail}</p>}
@@ -493,7 +528,7 @@ export default function ZenixDashboard() {
                     className="w-full text-left bg-zinc-900/40 border border-zinc-800/50 p-4 rounded-2xl hover:border-zinc-700 transition-all">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <Tag size={13} className="text-zinc-500" />
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: catColor(cat) }} />
                         <span className="font-semibold text-zinc-200 text-sm">{cat}</span>
                       </div>
                       <span className={`font-bold tabular-nums text-sm ${neto >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -546,7 +581,6 @@ export default function ZenixDashboard() {
 
             {/* Donut gastos por categoría */}
             {(() => {
-              const CAT_COLORS = ['#f43f5e','#f97316','#eab308','#10b981','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
               const mvsFiltrados = periodoAnalisis === 'mensual'
                 ? movimientosMes.filter(m => m.type === 'gasto')
                 : movimientos.filter(m => anioKey(m.fecha) === String(anioSel) && m.type === 'gasto');
@@ -558,7 +592,7 @@ export default function ZenixDashboard() {
               });
               const segmentos = Object.entries(mapCat)
                 .sort((a, b) => b[1] - a[1])
-                .map(([cat, amt], i) => ({ cat, amt, pct: totalGas > 0 ? amt / totalGas : 0, color: CAT_COLORS[i % CAT_COLORS.length] }));
+                .map(([cat, amt]) => ({ cat, amt, pct: totalGas > 0 ? amt / totalGas : 0, color: catColor(cat) }));
 
               const r = 54; const circ = 2 * Math.PI * r;
               let offset = 0;
@@ -593,11 +627,12 @@ export default function ZenixDashboard() {
                       </div>
                       <div className="flex-1 space-y-2 min-w-0">
                         {segmentos.map(seg => (
-                          <div key={seg.cat} className="flex items-center gap-2 min-w-0">
+                          <button key={seg.cat} type="button" onClick={() => setCatDetalle(seg.cat)}
+                            className="w-full flex items-center gap-2 min-w-0 px-2 py-1 -mx-2 rounded-lg hover:bg-zinc-800/60 transition-colors">
                             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: seg.color }} />
-                            <span className="text-[11px] text-zinc-400 truncate flex-1">{seg.cat}</span>
+                            <span className="text-[11px] text-zinc-400 truncate flex-1 text-left">{seg.cat}</span>
                             <span className="text-[11px] text-zinc-500 tabular-nums flex-shrink-0">{Math.round(seg.pct * 100)}%</span>
-                          </div>
+                          </button>
                         ))}
                       </div>
                     </div>
@@ -806,7 +841,7 @@ export default function ZenixDashboard() {
           <div className="bg-zinc-950 border border-zinc-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
             <div className="flex justify-between items-center px-6 py-5 border-b border-zinc-800">
               <div className="flex items-center gap-2">
-                <Tag size={14} className="text-zinc-500" />
+                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: catColor(catDetalle) }} />
                 <h2 className="text-base font-bold">{catDetalle}</h2>
               </div>
               <button type="button" onClick={() => setCatDetalle(null)} aria-label="Cerrar" className="text-zinc-600 hover:text-zinc-300 transition-colors p-1"><X size={20} /></button>
@@ -867,33 +902,53 @@ export default function ZenixDashboard() {
               </div>
 
               <div>
-                <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">Concepto <span className="text-rose-500">*</span></label>
-                <input required className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-700"
-                  placeholder="Ej: Sueldo, Alquiler, Supermercado…" value={formData.label} onChange={e => setFormData(f => ({ ...f, label: e.target.value }))} />
+                <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">Concepto</label>
+                <input className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-700"
+                  placeholder="Opcional · Ej: Nafta, Sueldo…" value={formData.label} onChange={e => setFormData(f => ({ ...f, label: e.target.value }))} />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">Categoría</label>
-                  <input list="categorias-list" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-700"
-                    placeholder="Ej: Auto" value={formData.category} onChange={e => setFormData(f => ({ ...f, category: e.target.value }))} />
-                  <datalist id="categorias-list">{categorias.map(c => <option key={c} value={c} />)}</datalist>
-                  {categorias.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5 mt-2">
-                      {categorias.map(cat => (
-                        <button key={cat} type="button" onClick={() => setFormData(f => ({ ...f, category: cat }))}
-                          className={`flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full transition-all ${formData.category === cat ? 'bg-zinc-200 text-black' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}>
-                          {formData.category === cat && <Check size={10} />}{cat}
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">
+                    Monto <span className="text-rose-500">*</span>
+                  </label>
+                  <input required type="text" inputMode="numeric"
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white font-mono outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-700"
+                    placeholder="0"
+                    value={formData.amount ? Number(formData.amount).toLocaleString('es-AR') : ''}
+                    onChange={e => {
+                      const clean = e.target.value.replace(/\D/g, '');
+                      setFormData(f => ({ ...f, amount: clean }));
+                    }} />
                 </div>
                 <div>
-                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">Monto <span className="text-rose-500">*</span></label>
-                  <input required type="number" min="0" step="0.01" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white font-mono outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-700"
-                    placeholder="0" value={formData.amount} onChange={e => setFormData(f => ({ ...f, amount: e.target.value }))} />
+                  <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">Fecha</label>
+                  <input type="date" max={todayISO()}
+                    className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white outline-none focus:border-zinc-600 transition-colors [color-scheme:dark]"
+                    value={formDate} onChange={e => setFormDate(e.target.value)} />
                 </div>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">Categoría</label>
+                <input list="categorias-list" className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white outline-none focus:border-zinc-600 transition-colors placeholder:text-zinc-700"
+                  placeholder="Ej: Auto" value={formData.category} onChange={e => setFormData(f => ({ ...f, category: e.target.value }))} />
+                <datalist id="categorias-list">{categorias.map(c => <option key={c} value={c} />)}</datalist>
+                {categorias.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {categorias.map(cat => (
+                      <button key={cat} type="button" onClick={() => setFormData(f => ({ ...f, category: cat }))}
+                        className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full transition-all"
+                        style={
+                          formData.category === cat
+                            ? { background: catColor(cat), color: '#000' }
+                            : { background: catColor(cat) + '22', color: catColor(cat) }
+                        }>
+                        {formData.category === cat && <Check size={10} />}{cat}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div>
