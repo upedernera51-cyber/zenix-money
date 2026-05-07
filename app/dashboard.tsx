@@ -92,6 +92,11 @@ export default function ZenixDashboard() {
   const [editando, setEditando]               = useState<Movimiento | null>(null);
   const [formData, setFormData]               = useState<FormState>(FORM_INICIAL);
   const [formDate, setFormDate]                = useState<string>(todayISO());
+  const [categoriasMeta, setCategoriasMeta]   = useState<Record<string, string | null>>({});
+  const [editingCat, setEditingCat]           = useState<string | null>(null);
+  const [editCatName, setEditCatName]         = useState('');
+  const [editCatColor, setEditCatColor]       = useState<string | null>(null);
+  const [savingCat, setSavingCat]             = useState(false);
   const [filtro, setFiltro]                   = useState<'todos' | TipoMovimiento>('todos');
   const [vista, setVista]                     = useState<Vista>('movimientos');
   const [showCatManager, setShowCatManager]   = useState(false);
@@ -116,16 +121,24 @@ export default function ZenixDashboard() {
     setLoading(true);
     const [mvRes, catRes] = await Promise.all([
       supabase.from('movimientos').select('*').eq('user_id', userName).order('fecha', { ascending: false }),
-      supabase.from('categorias').select('nombre').eq('user_id', userName).order('nombre'),
+      supabase.from('categorias').select('nombre, color').eq('user_id', userName).order('nombre'),
     ]);
     if (mvRes.error)  console.error('Movimientos:', mvRes.error.message);
     if (catRes.error) console.error('Categorías:',  catRes.error.message);
     setMovimientos((mvRes.data as Movimiento[]) || []);
-    setCategorias((catRes.data || []).map((c: { nombre: string }) => c.nombre));
+    const catsArr = (catRes.data || []) as { nombre: string; color: string | null }[];
+    setCategorias(catsArr.map(c => c.nombre));
+    setCategoriasMeta(Object.fromEntries(catsArr.map(c => [c.nombre, c.color])));
     setLoading(false);
   }, [userName]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
+
+  // ── Color de categoría: usa el guardado en DB o cae al hash por defecto ─────
+  const colorOf = (cat: string | null | undefined): string => {
+    if (cat && categoriasMeta[cat]) return categoriasMeta[cat]!;
+    return catColor(cat);
+  };
 
   // ── Setup de usuario ─────────────────────────────────────────────────────────
   const guardarUsuario = () => {
@@ -313,6 +326,45 @@ export default function ZenixDashboard() {
     setCategorias(prev => prev.filter(c => c !== cat));
   };
 
+  // ── Edición de categoría (nombre + color, con cascada a movimientos) ─────────
+  const abrirEdicionCat = (cat: string) => {
+    setEditingCat(cat);
+    setEditCatName(cat);
+    setEditCatColor(categoriasMeta[cat] ?? null);
+  };
+
+  const guardarEdicionCat = async () => {
+    if (!editingCat || !userName) return;
+    const oldName = editingCat;
+    const newName = editCatName.trim();
+    if (!newName) return;
+
+    // Si cambia el nombre y ya existe otra categoría con ese nombre, abortar
+    if (newName !== oldName && categorias.includes(newName)) {
+      alert(`Ya existe una categoría llamada "${newName}".`);
+      return;
+    }
+
+    setSavingCat(true);
+    // Actualizar la categoría
+    const { error: catErr } = await supabase.from('categorias')
+      .update({ nombre: newName, color: editCatColor })
+      .eq('nombre', oldName).eq('user_id', userName);
+    if (catErr) { alert('Error al actualizar categoría: ' + catErr.message); setSavingCat(false); return; }
+
+    // Si cambió el nombre, actualizar todos los movimientos en cascada
+    if (newName !== oldName) {
+      const { error: mvErr } = await supabase.from('movimientos')
+        .update({ categoria: newName })
+        .eq('categoria', oldName).eq('user_id', userName);
+      if (mvErr) { alert('Error al actualizar movimientos: ' + mvErr.message); setSavingCat(false); return; }
+    }
+
+    await fetchData();
+    setEditingCat(null);
+    setSavingCat(false);
+  };
+
   // ── CSV ───────────────────────────────────────────────────────────────────────
   const exportarCSV = () => {
     const filas = [['Fecha','Concepto','Categoría','Tipo','Monto','Detalle'], ...movimientosMes.map(m => [m.fecha, m.label, m.categoria || '', m.type, m.amount, m.detail || ''])];
@@ -441,7 +493,7 @@ export default function ZenixDashboard() {
                           {m.categoria && (
                             <button type="button" onClick={() => setCatDetalle(m.categoria!)}
                               className="cursor-pointer text-[10px] px-2 py-0.5 rounded-full hover:opacity-80 transition-opacity font-medium"
-                              style={{ background: catColor(m.categoria) + '22', color: catColor(m.categoria) }}>
+                              style={{ background: colorOf(m.categoria) + '22', color: colorOf(m.categoria) }}>
                               {m.categoria}
                             </button>
                           )}
@@ -501,11 +553,17 @@ export default function ZenixDashboard() {
               ) : (
                 <div className="flex flex-wrap gap-2">
                   {categorias.map(cat => (
-                    <div key={cat} className="flex items-center gap-1 bg-zinc-800 rounded-full px-3 py-1">
-                      <span className="text-xs text-zinc-300">{cat}</span>
+                    <div key={cat}
+                      className="flex items-center gap-1 rounded-full px-3 py-1 transition-all"
+                      style={{ background: colorOf(cat) + '22' }}>
+                      <button type="button" onClick={() => abrirEdicionCat(cat)}
+                        className="text-xs font-medium hover:opacity-80 transition-opacity cursor-pointer"
+                        style={{ color: colorOf(cat) }}>
+                        {cat}
+                      </button>
                       {showCatManager && (
                         <button type="button" onClick={() => eliminarCat(cat)} aria-label={`Eliminar ${cat}`}
-                          className="text-zinc-600 hover:text-rose-400 transition-colors ml-1">
+                          className="text-zinc-500 hover:text-rose-400 transition-colors ml-1">
                           <X size={11} />
                         </button>
                       )}
@@ -528,7 +586,7 @@ export default function ZenixDashboard() {
                     className="w-full text-left bg-zinc-900/40 border border-zinc-800/50 p-4 rounded-2xl hover:border-zinc-700 transition-all">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center gap-2">
-                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: catColor(cat) }} />
+                        <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: colorOf(cat) }} />
                         <span className="font-semibold text-zinc-200 text-sm">{cat}</span>
                       </div>
                       <span className={`font-bold tabular-nums text-sm ${neto >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
@@ -592,7 +650,7 @@ export default function ZenixDashboard() {
               });
               const segmentos = Object.entries(mapCat)
                 .sort((a, b) => b[1] - a[1])
-                .map(([cat, amt]) => ({ cat, amt, pct: totalGas > 0 ? amt / totalGas : 0, color: catColor(cat) }));
+                .map(([cat, amt]) => ({ cat, amt, pct: totalGas > 0 ? amt / totalGas : 0, color: colorOf(cat) }));
 
               const r = 54; const circ = 2 * Math.PI * r;
               let offset = 0;
@@ -841,7 +899,7 @@ export default function ZenixDashboard() {
           <div className="bg-zinc-950 border border-zinc-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
             <div className="flex justify-between items-center px-6 py-5 border-b border-zinc-800">
               <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: catColor(catDetalle) }} />
+                <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: colorOf(catDetalle) }} />
                 <h2 className="text-base font-bold">{catDetalle}</h2>
               </div>
               <button type="button" onClick={() => setCatDetalle(null)} aria-label="Cerrar" className="text-zinc-600 hover:text-zinc-300 transition-colors p-1"><X size={20} /></button>
@@ -941,8 +999,8 @@ export default function ZenixDashboard() {
                         className="flex items-center gap-1 text-[11px] px-2.5 py-1 rounded-full transition-all"
                         style={
                           formData.category === cat
-                            ? { background: catColor(cat), color: '#000' }
-                            : { background: catColor(cat) + '22', color: catColor(cat) }
+                            ? { background: colorOf(cat), color: '#000' }
+                            : { background: colorOf(cat) + '22', color: colorOf(cat) }
                         }>
                         {formData.category === cat && <Check size={10} />}{cat}
                       </button>
@@ -993,6 +1051,70 @@ export default function ZenixDashboard() {
                 Cancelar
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL EDITAR CATEGORÍA */}
+      {editingCat && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[150] flex items-end sm:items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setEditingCat(null); }}>
+          <div className="bg-zinc-950 border border-zinc-800 w-full max-w-md rounded-3xl p-7 shadow-2xl">
+            <div className="flex justify-between items-center mb-5">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full" style={{ background: editCatColor || catColor(editCatName || editingCat) }} />
+                <h2 className="text-base font-bold">Editar categoría</h2>
+              </div>
+              <button type="button" onClick={() => setEditingCat(null)} aria-label="Cerrar" className="text-zinc-600 hover:text-zinc-300 transition-colors p-1">
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="space-y-5">
+              {/* Nombre */}
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-1.5">Nombre</label>
+                <input
+                  className="w-full bg-zinc-900 border border-zinc-800 rounded-2xl px-4 py-3.5 text-white outline-none focus:border-zinc-600 transition-colors"
+                  value={editCatName}
+                  onChange={e => setEditCatName(e.target.value)}
+                />
+                <p className="text-[10px] text-zinc-600 mt-1.5 ml-1">Cambiar el nombre actualiza todos los movimientos históricos.</p>
+              </div>
+
+              {/* Color picker */}
+              <div>
+                <label className="text-[10px] text-zinc-500 uppercase tracking-widest ml-1 block mb-2">Color</label>
+                <div className="flex flex-wrap gap-2">
+                  {/* Auto (color por hash) */}
+                  <button type="button" onClick={() => setEditCatColor(null)}
+                    className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all ${editCatColor === null ? 'border-white' : 'border-zinc-700'}`}
+                    style={{ background: catColor(editCatName || editingCat) }}>
+                    {editCatColor === null && <Check size={14} className="text-white drop-shadow" />}
+                  </button>
+                  {/* Colores de la paleta */}
+                  {CAT_COLORS.map(c => (
+                    <button key={c} type="button" onClick={() => setEditCatColor(c)}
+                      className={`w-9 h-9 rounded-full border-2 flex items-center justify-center transition-all ${editCatColor === c ? 'border-white' : 'border-zinc-700'}`}
+                      style={{ background: c }}>
+                      {editCatColor === c && <Check size={14} className="text-white drop-shadow" />}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Botones */}
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setEditingCat(null)} disabled={savingCat}
+                  className="flex-1 bg-zinc-900 border border-zinc-800 text-zinc-400 font-bold py-3 rounded-2xl hover:border-zinc-600 transition-all text-sm disabled:opacity-50">
+                  Cancelar
+                </button>
+                <button type="button" onClick={guardarEdicionCat} disabled={savingCat || !editCatName.trim()}
+                  className="flex-[2] bg-emerald-500 text-black font-black py-3 rounded-2xl hover:bg-emerald-400 transition-all active:scale-95 text-sm tracking-wide disabled:opacity-50">
+                  {savingCat ? 'GUARDANDO…' : 'GUARDAR'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
