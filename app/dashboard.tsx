@@ -102,6 +102,7 @@ export default function ZenixDashboard() {
   const [showCatManager, setShowCatManager]   = useState(false);
   const [nuevaCat, setNuevaCat]               = useState('');
   const [catDetalle, setCatDetalle]           = useState<string | null>(null);
+  const [catDetalleAnio, setCatDetalleAnio]   = useState<number | null>(null);
   const [periodoAnalisis, setPeriodoAnalisis] = useState<PeriodoAnalisis>('mensual');
   const [anioSel, setAnioSel]                 = useState(hoy.getFullYear());
   const [mesSel, setMesSel]                   = useState(
@@ -181,10 +182,21 @@ export default function ZenixDashboard() {
   // ── Movimientos de la categoría seleccionada (detalle) ───────────────────────
   const movimientosCatDetalle = useMemo(() => {
     if (!catDetalle) return [];
-    return movimientosMes.filter(m =>
+    // Si catDetalleAnio está seteado → ámbito anual; si no → mes seleccionado
+    const fuente = catDetalleAnio !== null
+      ? movimientos.filter(m => anioKey(m.fecha) === String(catDetalleAnio))
+      : movimientosMes;
+    return fuente.filter(m =>
       catDetalle === '(Sin categoría)' ? !m.categoria : m.categoria === catDetalle
     ).sort((a, b) => new Date(b.fecha).getTime() - new Date(a.fecha).getTime());
-  }, [movimientosMes, catDetalle]);
+  }, [movimientos, movimientosMes, catDetalle, catDetalleAnio]);
+
+  // Totales del detalle (para mostrar en el modal independientemente del ámbito)
+  const totalesCatDetalle = useMemo(() => {
+    const ing = movimientosCatDetalle.filter(m => m.type === 'ingreso').reduce((a, m) => a + Number(m.amount), 0);
+    const gas = movimientosCatDetalle.filter(m => m.type === 'gasto').reduce((a, m) => a + Number(m.amount), 0);
+    return { ingreso: ing, gasto: gas, neto: ing - gas };
+  }, [movimientosCatDetalle]);
 
   // ── Datos barras mensual (6 meses) ───────────────────────────────────────────
   const datosBarrasMensual = useMemo(() => {
@@ -685,7 +697,11 @@ export default function ZenixDashboard() {
                       </div>
                       <div className="flex-1 space-y-2 min-w-0">
                         {segmentos.map(seg => (
-                          <button key={seg.cat} type="button" onClick={() => setCatDetalle(seg.cat)}
+                          <button key={seg.cat} type="button"
+                            onClick={() => {
+                              setCatDetalle(seg.cat);
+                              setCatDetalleAnio(periodoAnalisis === 'anual' ? anioSel : null);
+                            }}
                             className="w-full flex items-center gap-2 min-w-0 px-2 py-1 -mx-2 rounded-lg hover:bg-zinc-800/60 transition-colors">
                             <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: seg.color }} />
                             <span className="text-[11px] text-zinc-400 truncate flex-1 text-left">{seg.cat}</span>
@@ -895,14 +911,17 @@ export default function ZenixDashboard() {
       {/* MODAL DETALLE CATEGORÍA */}
       {catDetalle && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-end sm:items-center justify-center p-4"
-          onClick={(e) => { if (e.target === e.currentTarget) setCatDetalle(null); }}>
+          onClick={(e) => { if (e.target === e.currentTarget) { setCatDetalle(null); setCatDetalleAnio(null); } }}>
           <div className="bg-zinc-950 border border-zinc-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
             <div className="flex justify-between items-center px-6 py-5 border-b border-zinc-800">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 min-w-0">
                 <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ background: colorOf(catDetalle) }} />
-                <h2 className="text-base font-bold">{catDetalle}</h2>
+                <h2 className="text-base font-bold truncate">{catDetalle}</h2>
+                <span className="text-[10px] text-zinc-500 uppercase tracking-widest flex-shrink-0">
+                  · {catDetalleAnio !== null ? catDetalleAnio : mesLabel.toLowerCase()}
+                </span>
               </div>
-              <button type="button" onClick={() => setCatDetalle(null)} aria-label="Cerrar" className="text-zinc-600 hover:text-zinc-300 transition-colors p-1"><X size={20} /></button>
+              <button type="button" onClick={() => { setCatDetalle(null); setCatDetalleAnio(null); }} aria-label="Cerrar" className="text-zinc-600 hover:text-zinc-300 transition-colors p-1"><X size={20} /></button>
             </div>
             <div className="px-4 py-4 max-h-[60vh] overflow-y-auto space-y-2">
               {movimientosCatDetalle.length === 0 ? (
@@ -921,20 +940,16 @@ export default function ZenixDashboard() {
                 </div>
               ))}
             </div>
-            {/* Totales del detalle */}
-            {(() => {
-              const cat = categoriasTotales.find(c => c.cat === catDetalle);
-              if (!cat) return null;
-              return (
-                <div className="flex justify-between items-center px-6 py-4 border-t border-zinc-800 bg-zinc-900/30">
-                  {cat.ingreso > 0 && <span className="text-xs text-emerald-400 tabular-nums">+${fmt(cat.ingreso)}</span>}
-                  {cat.gasto > 0 && <span className="text-xs text-rose-400 tabular-nums">−${fmt(cat.gasto)}</span>}
-                  <span className={`text-sm font-black tabular-nums ${cat.neto >= 0 ? 'text-white' : 'text-rose-400'}`}>
-                    {cat.neto >= 0 ? '+' : '−'}${fmt(Math.abs(cat.neto))} neto
-                  </span>
-                </div>
-              );
-            })()}
+            {/* Totales del detalle (respeta el ámbito mensual o anual) */}
+            {movimientosCatDetalle.length > 0 && (
+              <div className="flex justify-between items-center px-6 py-4 border-t border-zinc-800 bg-zinc-900/30">
+                {totalesCatDetalle.ingreso > 0 && <span className="text-xs text-emerald-400 tabular-nums">+${fmt(totalesCatDetalle.ingreso)}</span>}
+                {totalesCatDetalle.gasto > 0 && <span className="text-xs text-rose-400 tabular-nums">−${fmt(totalesCatDetalle.gasto)}</span>}
+                <span className={`text-sm font-black tabular-nums ${totalesCatDetalle.neto >= 0 ? 'text-white' : 'text-rose-400'}`}>
+                  {totalesCatDetalle.neto >= 0 ? '+' : '−'}${fmt(Math.abs(totalesCatDetalle.neto))} neto
+                </span>
+              </div>
+            )}
           </div>
         </div>
       )}
