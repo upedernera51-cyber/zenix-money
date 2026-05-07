@@ -51,8 +51,25 @@ const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto'
 const mesKey = (f: string) => f.slice(0, 7);
 const anioKey = (f: string) => f.slice(0, 4);
 
-// Paleta de colores para categorías (usada en donut y badges)
-const CAT_COLORS = ['#f43f5e','#f97316','#eab308','#10b981','#06b6d4','#3b82f6','#8b5cf6','#ec4899'];
+// Paleta de colores para categorías (usada en donut y badges) — 16 colores distintos
+const CAT_COLORS = [
+  '#f43f5e', // rose
+  '#fb7185', // rose claro
+  '#f97316', // naranja
+  '#fbbf24', // ámbar
+  '#eab308', // amarillo
+  '#84cc16', // lima
+  '#10b981', // esmeralda
+  '#14b8a6', // verde azulado
+  '#06b6d4', // cian
+  '#0ea5e9', // celeste
+  '#3b82f6', // azul
+  '#6366f1', // índigo
+  '#8b5cf6', // violeta
+  '#a855f7', // púrpura
+  '#d946ef', // fucsia
+  '#ec4899', // rosa
+];
 
 // Hash estable: la misma categoría siempre tiene el mismo color en toda la app
 const catColor = (cat: string | null | undefined): string => {
