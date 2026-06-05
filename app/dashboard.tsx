@@ -138,7 +138,9 @@ export default function ZenixDashboard() {
     if (!userName) return;
     setLoading(true);
     const [mvRes, catRes] = await Promise.all([
-      supabase.from('movimientos').select('*').eq('user_id', userName).order('fecha', { ascending: false }),
+      supabase.from('movimientos').select('*').eq('user_id', userName)
+        .order('created_at', { ascending: false })
+        .order('fecha', { ascending: false }),
       supabase.from('categorias').select('nombre, color').eq('user_id', userName).order('nombre'),
     ]);
     if (mvRes.error)  console.error('Movimientos:', mvRes.error.message);
