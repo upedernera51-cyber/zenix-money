@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  Wallet, Plus, Trash2, Zap, TrendingUp, TrendingDown, X,
+  Wallet, Plus, Trash2, TrendingUp, TrendingDown, X,
   Pencil, Download, BarChart2, Tag, ChevronLeft, ChevronRight,
   Settings, Check, User,
 } from "lucide-react";
@@ -414,7 +414,9 @@ export default function ZenixDashboard() {
       <header className="sticky top-0 z-40 bg-[#080808]/90 backdrop-blur-xl border-b border-zinc-800/40 px-6 py-4 flex justify-between items-center">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 bg-emerald-500 rounded-xl flex items-center justify-center shadow-lg shadow-emerald-500/30">
-            <Zap size={16} color="black" strokeWidth={3} />
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="black" xmlns="http://www.w3.org/2000/svg">
+              <path d="M 13 5 L 6.5 12.7 L 12 12.7 L 11 18.5 L 17.5 10.8 L 12 10.8 Z" />
+            </svg>
           </div>
           <div>
             <h1 className="text-xl font-black tracking-tighter text-white leading-none">ZENIX</h1>
