@@ -397,10 +397,22 @@ export default function ZenixDashboard() {
   };
 
   // ── CSV ───────────────────────────────────────────────────────────────────────
+  const downloadCSV = (rows: (string | number)[][], filename: string) => {
+    const blob = new Blob([rows.map(r => r.map(c => `"${c}"`).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  };
+
   const exportarCSV = () => {
     const filas = [['Fecha','Concepto','Categoría','Tipo','Monto','Detalle'], ...movimientosMes.map(m => [m.fecha, m.label, m.categoria || '', m.type, m.amount, m.detail || ''])];
-    const blob = new Blob([filas.map(r => r.map(c => `"${c}"`).join(',')).join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `zenix-${mesSel}.csv`; a.click();
+    downloadCSV(filas, `zenix-${mesSel}.csv`);
+  };
+
+  const exportarCSVAnio = () => {
+    const mvs = movimientos
+      .filter(m => anioKey(m.fecha) === String(anioSel))
+      .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime());
+    const filas = [['Fecha','Concepto','Categoría','Tipo','Monto','Detalle'], ...mvs.map(m => [m.fecha, m.label, m.categoria || '', m.type, m.amount, m.detail || ''])];
+    downloadCSV(filas, `zenix-${anioSel}.csv`);
   };
 
   // ── Datos según período seleccionado ─────────────────────────────────────────
@@ -656,7 +668,7 @@ export default function ZenixDashboard() {
                   </button>
                 ))}
               </div>
-              {/* Navegación anual */}
+              {/* Navegación anual + export */}
               {periodoAnalisis === 'anual' && (
                 <div className="flex items-center gap-2">
                   <button type="button" aria-label="Año anterior" onClick={() => setAnioSel(a => a - 1)} className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-colors">
@@ -665,6 +677,11 @@ export default function ZenixDashboard() {
                   <span className="text-sm font-bold text-zinc-300 w-12 text-center">{anioSel}</span>
                   <button type="button" aria-label="Año siguiente" onClick={() => setAnioSel(a => a + 1)} className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-colors">
                     <ChevronRight size={14} className="text-zinc-400" />
+                  </button>
+                  <button type="button" aria-label="Exportar año CSV" title={`Exportar ${anioSel} CSV`}
+                    onClick={exportarCSVAnio}
+                    className="p-1.5 rounded-lg bg-zinc-900 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-zinc-200 transition-all ml-1">
+                    <Download size={14} />
                   </button>
                 </div>
               )}
