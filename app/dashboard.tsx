@@ -538,6 +538,17 @@ export default function ZenixDashboard() {
               {tab.icon}{tab.label}
             </button>
           ))}
+          <button type="button" aria-label="Papelera"
+            title={`Papelera${papelera.length > 0 ? ` (${papelera.length})` : ''}`}
+            onClick={() => setShowPapelera(true)}
+            className="relative px-2.5 py-2.5 rounded-xl text-zinc-600 hover:text-zinc-300 transition-colors">
+            <Trash2 size={14} />
+            {papelera.length > 0 && (
+              <span className="absolute top-0.5 right-0.5 bg-rose-500 text-white text-[8px] font-bold rounded-full w-3.5 h-3.5 flex items-center justify-center leading-none">
+                {papelera.length > 99 ? '99' : papelera.length}
+              </span>
+            )}
+          </button>
         </div>
 
         {/* ── VISTA: MOVIMIENTOS ───────────────────────────────────────────── */}
@@ -552,16 +563,6 @@ export default function ZenixDashboard() {
               ))}
               <div className="ml-auto flex items-center gap-2">
                 <span className="text-xs text-zinc-600 tabular-nums">{movimientosFiltrados.length} reg.</span>
-                <button type="button" aria-label="Papelera" title={`Papelera${papelera.length > 0 ? ` (${papelera.length})` : ''}`}
-                  onClick={() => setShowPapelera(true)}
-                  className="relative p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-zinc-200 transition-all">
-                  <Trash2 size={14} />
-                  {papelera.length > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
-                      {papelera.length > 99 ? '99+' : papelera.length}
-                    </span>
-                  )}
-                </button>
                 <button type="button" aria-label="Exportar CSV" title="Exportar CSV" onClick={exportarCSV}
                   className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-zinc-200 transition-all">
                   <Download size={14} />
