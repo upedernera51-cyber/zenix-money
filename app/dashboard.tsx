@@ -3,7 +3,7 @@
 import {
   Wallet, Plus, Trash2, TrendingUp, TrendingDown, X,
   Pencil, Download, BarChart2, Tag, ChevronLeft, ChevronRight,
-  Settings, Check, User,
+  Settings, Check, User, RotateCcw,
 } from "lucide-react";
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
@@ -26,6 +26,7 @@ interface Movimiento {
   amount: number;
   type: TipoMovimiento;
   categoria: string | null;
+  deleted_at?: string | null;
 }
 
 interface FormState {
@@ -120,6 +121,8 @@ export default function ZenixDashboard() {
   const [nuevaCat, setNuevaCat]               = useState('');
   const [catDetalle, setCatDetalle]           = useState<string | null>(null);
   const [catDetalleAnio, setCatDetalleAnio]   = useState<number | null>(null);
+  const [papelera, setPapelera]               = useState<Movimiento[]>([]);
+  const [showPapelera, setShowPapelera]       = useState(false);
   const [periodoAnalisis, setPeriodoAnalisis] = useState<PeriodoAnalisis>('mensual');
   const [anioSel, setAnioSel]                 = useState(hoy.getFullYear());
   const [mesSel, setMesSel]                   = useState(
@@ -137,15 +140,19 @@ export default function ZenixDashboard() {
   const fetchData = useCallback(async () => {
     if (!userName) return;
     setLoading(true);
-    const [mvRes, catRes] = await Promise.all([
-      supabase.from('movimientos').select('*').eq('user_id', userName)
+    const [mvRes, papRes, catRes] = await Promise.all([
+      supabase.from('movimientos').select('*').eq('user_id', userName).is('deleted_at', null)
         .order('created_at', { ascending: false })
         .order('fecha', { ascending: false }),
+      supabase.from('movimientos').select('*').eq('user_id', userName).not('deleted_at', 'is', null)
+        .order('deleted_at', { ascending: false }),
       supabase.from('categorias').select('nombre, color').eq('user_id', userName).order('nombre'),
     ]);
     if (mvRes.error)  console.error('Movimientos:', mvRes.error.message);
+    if (papRes.error) console.error('Papelera:',    papRes.error.message);
     if (catRes.error) console.error('Categorías:',  catRes.error.message);
     setMovimientos((mvRes.data as Movimiento[]) || []);
+    setPapelera((papRes.data as Movimiento[]) || []);
     const catsArr = (catRes.data || []) as { nombre: string; color: string | null }[];
     setCategorias(catsArr.map(c => c.nombre));
     setCategoriasMeta(Object.fromEntries(catsArr.map(c => [c.nombre, c.color])));
@@ -336,9 +343,39 @@ export default function ZenixDashboard() {
     setIsModalOpen(false); setEditando(null); setFormData(FORM_INICIAL); setFormDate(todayISO());
   };
   const handleDelete = async (id: string) => {
+    // Soft delete: marca como eliminado, va a la papelera
+    const { error } = await supabase.from('movimientos')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id);
+    if (error) { alert('Error al eliminar: ' + error.message); return; }
+    const mv = movimientos.find(m => m.id === id);
+    if (mv) {
+      setMovimientos(prev => prev.filter(m => m.id !== id));
+      setPapelera(prev => [{ ...mv, deleted_at: new Date().toISOString() }, ...prev]);
+    }
+  };
+
+  const restaurarMovimiento = async (id: string) => {
+    const { error } = await supabase.from('movimientos')
+      .update({ deleted_at: null }).eq('id', id);
+    if (error) { alert('Error al restaurar: ' + error.message); return; }
+    await fetchData();
+  };
+
+  const eliminarDefinitivo = async (id: string) => {
+    if (!confirm('¿Eliminar este movimiento definitivamente? No se puede recuperar.')) return;
     const { error } = await supabase.from('movimientos').delete().eq('id', id);
     if (error) { alert('Error al eliminar: ' + error.message); return; }
-    setMovimientos(prev => prev.filter(m => m.id !== id));
+    setPapelera(prev => prev.filter(m => m.id !== id));
+  };
+
+  const vaciarPapelera = async () => {
+    if (!userName || papelera.length === 0) return;
+    if (!confirm(`¿Eliminar definitivamente los ${papelera.length} movimientos de la papelera? No se puede recuperar.`)) return;
+    const { error } = await supabase.from('movimientos').delete()
+      .eq('user_id', userName).not('deleted_at', 'is', null);
+    if (error) { alert('Error: ' + error.message); return; }
+    setPapelera([]);
   };
 
   // ── Gestión categorías ────────────────────────────────────────────────────────
@@ -515,6 +552,16 @@ export default function ZenixDashboard() {
               ))}
               <div className="ml-auto flex items-center gap-2">
                 <span className="text-xs text-zinc-600 tabular-nums">{movimientosFiltrados.length} reg.</span>
+                <button type="button" aria-label="Papelera" title={`Papelera${papelera.length > 0 ? ` (${papelera.length})` : ''}`}
+                  onClick={() => setShowPapelera(true)}
+                  className="relative p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-zinc-200 transition-all">
+                  <Trash2 size={14} />
+                  {papelera.length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-rose-500 text-white text-[9px] font-bold rounded-full w-4 h-4 flex items-center justify-center">
+                      {papelera.length > 99 ? '99+' : papelera.length}
+                    </span>
+                  )}
+                </button>
                 <button type="button" aria-label="Exportar CSV" title="Exportar CSV" onClick={exportarCSV}
                   className="p-2 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 text-zinc-400 hover:text-zinc-200 transition-all">
                   <Download size={14} />
@@ -1103,6 +1150,71 @@ export default function ZenixDashboard() {
                 className="w-full mt-2 text-xs text-zinc-600 hover:text-zinc-400 py-2 transition-colors">
                 Cancelar
               </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* MODAL PAPELERA */}
+      {showPapelera && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-md z-[120] flex items-end sm:items-center justify-center p-4"
+          onClick={(e) => { if (e.target === e.currentTarget) setShowPapelera(false); }}>
+          <div className="bg-zinc-950 border border-zinc-800 w-full max-w-md rounded-3xl shadow-2xl overflow-hidden">
+            <div className="flex justify-between items-center px-6 py-5 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <Trash2 size={15} className="text-zinc-500" />
+                <h2 className="text-base font-bold">Papelera</h2>
+                <span className="text-[10px] text-zinc-600 uppercase tracking-widest">{papelera.length} elementos</span>
+              </div>
+              <button type="button" onClick={() => setShowPapelera(false)} aria-label="Cerrar" className="text-zinc-600 hover:text-zinc-300 transition-colors p-1"><X size={20} /></button>
+            </div>
+            <div className="px-4 py-4 max-h-[60vh] overflow-y-auto space-y-2">
+              {papelera.length === 0 ? (
+                <div className="text-center py-10">
+                  <p className="text-zinc-600 text-sm">La papelera está vacía.</p>
+                  <p className="text-zinc-700 text-xs mt-1">Los movimientos que elimines aparecerán acá.</p>
+                </div>
+              ) : papelera.map(m => (
+                <div key={m.id} className="flex items-center gap-3 bg-zinc-900/60 border border-zinc-800/40 p-3 rounded-2xl">
+                  <div className={`w-1 self-stretch rounded-full flex-shrink-0 ${m.type === 'ingreso' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-zinc-200 truncate">{m.label}</p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      {m.categoria && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                          style={{ background: colorOf(m.categoria) + '22', color: colorOf(m.categoria) }}>
+                          {m.categoria}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-zinc-600">{formatFecha(m.fecha)}</span>
+                      {m.deleted_at && (
+                        <span className="text-[10px] text-zinc-700">· eliminado {formatFecha(m.deleted_at)}</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <span className={`text-sm font-bold tabular-nums ${m.type === 'ingreso' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      {m.type === 'ingreso' ? '+' : '−'}${fmt(Number(m.amount))}
+                    </span>
+                    <button type="button" onClick={() => restaurarMovimiento(m.id)} aria-label="Restaurar"
+                      title="Restaurar" className="text-zinc-500 hover:text-emerald-400 transition-colors p-1">
+                      <RotateCcw size={14} />
+                    </button>
+                    <button type="button" onClick={() => eliminarDefinitivo(m.id)} aria-label="Eliminar definitivamente"
+                      title="Eliminar definitivamente" className="text-zinc-500 hover:text-rose-400 transition-colors p-1">
+                      <X size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {papelera.length > 0 && (
+              <div className="flex justify-end px-6 py-3 border-t border-zinc-800 bg-zinc-900/30">
+                <button type="button" onClick={vaciarPapelera}
+                  className="text-xs text-rose-400 hover:text-rose-300 font-semibold transition-colors">
+                  Vaciar papelera
+                </button>
+              </div>
             )}
           </div>
         </div>
